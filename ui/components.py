@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QPushButton, QComboBox, QGraphicsDropShadowEffect, QProgressBar, QLabel, QWidget, QVBoxLayout, QAbstractButton
-from PyQt6.QtCore import QPropertyAnimation, pyqtProperty, QEasingCurve, Qt, QRectF, QPointF, QPoint, QTimer, QRect
+from PyQt6.QtWidgets import QPushButton, QComboBox, QGraphicsDropShadowEffect, QProgressBar, QLabel, QWidget, QVBoxLayout, QAbstractButton, QApplication
+from PyQt6.QtCore import QPropertyAnimation, pyqtProperty, QEasingCurve, Qt, QRectF, QPointF, QPoint, QTimer, QRect, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QRadialGradient, QBrush, QPen, QScreen, QLinearGradient
 
 import webbrowser
@@ -541,10 +541,12 @@ class Toast(QWidget):
         super().__init__(None) # Toast is a top-level window
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        
+        self.is_sticky = False
+        self.is_closing = False
         self.is_success = is_success
         self.title = title
         self.message = message
+        self.current_state = is_success # Track state for optimization
         
         # Layout
         self.layout = QVBoxLayout(self)
@@ -557,29 +559,53 @@ class Toast(QWidget):
         self.frame_layout.setSpacing(2)
         
         title_label = QLabel(title)
+        self.title_label = title_label
         title_label.setStyleSheet("color: white; font-weight: bold; font-size: 15px; background: transparent;")
         title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.frame_layout.addWidget(title_label)
         
         if message:
             msg_label = QLabel(message)
+            self.msg_label = msg_label
             msg_label.setStyleSheet("color: #BBBBBB; font-size: 12px; background: transparent;")
             msg_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
             msg_label.setWordWrap(True)
             self.frame_layout.addWidget(msg_label)
+        else:
+            self.msg_label = None
         
         self.layout.addWidget(self.frame)
         
         # Style
         border_color = "#00FF41" if is_success else "#FF3131"
         bg_color = "#0D0D0D"
+        
         self.frame.setStyleSheet(f"""
             QWidget#ToastFrame {{
                 background-color: {bg_color};
                 border: 1px solid {border_color};
-                border-radius: 10px;
+                border-radius: 12px;
             }}
         """)
+        
+        # Progress Bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background-color: rgba(255, 255, 255, 0.1);
+                border: none;
+                border-radius: 2px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {border_color};
+                border-radius: 2px;
+            }}
+        """)
+        self.progress_bar.hide()
+        self.frame_layout.addSpacing(5)
+        self.frame_layout.addWidget(self.progress_bar)
         
         # Glow Shadow
         self.shadow = QGraphicsDropShadowEffect()
@@ -590,7 +616,7 @@ class Toast(QWidget):
         
         # Adjustable size based on content
         width = 320
-        height = 70 if message else 50
+        height = 95 if message else 70
         self.setFixedSize(width, height)
         
         # Position Setup (Top Right)
@@ -611,6 +637,13 @@ class Toast(QWidget):
         self.timer.timeout.connect(self.slide_out)
         self.timer.setSingleShot(True)
         
+    def set_sticky(self, sticky):
+        self.is_sticky = sticky
+        if sticky:
+            self.timer.stop()
+        else:
+            self.timer.start(4000)
+
     def show_toast(self):
         self.show()
         self.pos_anim.setStartValue(QPoint(self.start_x, self.y_pos))
@@ -618,9 +651,254 @@ class Toast(QWidget):
         self.pos_anim.start()
         self.timer.start(4000) # Show for 4 seconds
 
+    def update_content(self, title, message="", is_success=True, duration=4000, progress=-1):
+        self.title_label.setText(title)
+        if self.msg_label:
+            self.msg_label.setText(message)
+        
+        # Only update styling if state changed (Performance optimization)
+        if is_success != self.current_state:
+            self.current_state = is_success
+            border_color = "#00FF41" if is_success else "#FF3131"
+            self.frame.setStyleSheet(f"""
+                QWidget#ToastFrame {{
+                    background-color: #0D0D0D;
+                    border: 1px solid {border_color};
+                    border-radius: 12px;
+                }}
+            """)
+            
+            self.progress_bar.setStyleSheet(f"""
+                QProgressBar {{
+                    background-color: rgba(255, 255, 255, 0.1);
+                    border: none;
+                    border-radius: 2px;
+                }}
+                QProgressBar::chunk {{
+                    background-color: {border_color};
+                    border-radius: 2px;
+                }}
+            """)
+            # Update shadow
+            self.shadow.setColor(QColor(0, 255, 65, 80) if is_success else QColor(255, 49, 49, 80))
+        
+        if progress >= 0:
+            self.progress_bar.show()
+            self.progress_bar.setValue(progress)
+        else:
+            self.progress_bar.hide()
+        
+        # Reset timer if not sticky
+        if self.is_sticky:
+            self.timer.stop()
+        elif self.timer.isActive():
+            self.timer.start(duration)
+
     def slide_out(self):
+        if self.is_closing:
+            return
+        self.is_closing = True
         self.pos_anim.stop()
         self.pos_anim.setEndValue(QPoint(self.start_x, self.y_pos))
         self.pos_anim.setEasingCurve(QEasingCurve.Type.InExpo)
         self.pos_anim.finished.connect(self.close)
         self.pos_anim.start()
+
+class SyncPill(QWidget):
+    """A ultra-lightweight, high-performance progress pill for real-time feedback."""
+    def __init__(self, parent=None):
+        super().__init__(None)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        self.setFixedSize(320, 105)
+        
+        # Layout
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(5, 5, 5, 5)
+        
+        self.frame = QWidget()
+        self.frame.setObjectName("PillFrame")
+        self.frame.setStyleSheet("""
+            QWidget#PillFrame {
+                background-color: #0D0D0D;
+                border: 1px solid #00FF41;
+                border-radius: 12px;
+            }
+        """)
+        self.frame_layout = QVBoxLayout(self.frame)
+        self.frame_layout.setContentsMargins(15, 8, 15, 8)
+        self.frame_layout.setSpacing(2)
+        
+        # Glow Shadow (Matched to Toast)
+        self.shadow = QGraphicsDropShadowEffect()
+        self.shadow.setBlurRadius(20)
+        self.shadow.setColor(QColor(0, 255, 65, 100))
+        self.shadow.setOffset(0, 0)
+        self.frame.setGraphicsEffect(self.shadow)
+        
+        self.label = QLabel("Syncing Progress...")
+        self.label.setFixedHeight(18)
+        self.label.setStyleSheet("color: white; font-weight: bold; font-size: 13px; background: transparent;")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        self.stats_label = QLabel("Waiting to start...")
+        self.stats_label.setFixedHeight(15)
+        self.stats_label.setStyleSheet("color: #00FF41; font-weight: bold; font-size: 10px; font-family: 'JetBrains Mono'; background: transparent;")
+        self.stats_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.file_label = QLabel("...")
+        self.file_label.setFixedHeight(15)
+        self.file_label.setStyleSheet("color: #999999; font-size: 9px; background: transparent;")
+        self.file_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.file_label.setWordWrap(False)
+        self.file_label.setMaximumWidth(240)
+        
+        self.bar = QProgressBar()
+        self.bar.setFixedHeight(4)
+        self.bar.setTextVisible(False)
+        self.bar.setStyleSheet("""
+            QProgressBar {
+                background-color: rgba(255, 255, 255, 0.1);
+                border: none;
+                border-radius: 2px;
+            }
+            QProgressBar::chunk {
+                background-color: #00FF41;
+                border-radius: 2px;
+            }
+        """)
+        
+        self.frame_layout.addWidget(self.label)
+        self.frame_layout.addWidget(self.stats_label)
+        self.frame_layout.addWidget(self.bar)
+        self.frame_layout.addWidget(self.file_label)
+        self.layout.addWidget(self.frame)
+        
+        # Position matching Toast (Top Right)
+        screen = QApplication.primaryScreen().availableGeometry()
+        width = 320
+        self.move(screen.width() - width - 20, 40)
+
+    def update_progress(self, val, msg, current, total, size_mb):
+        self.label.setText(f"Syncing... {val}%")
+        self.stats_label.setText(f"{current} / {total} files | {size_mb:.2f} MB")
+        
+        # Abbreviate filename if too long
+        filename = msg.split("\\")[-1] if "\\" in msg else msg.split("/")[-1]
+        if len(filename) > 30:
+            filename = filename[:27] + "..."
+        self.file_label.setText(f"→ {filename}")
+        
+        self.bar.setValue(val)
+        if not self.isVisible():
+            self.show()
+
+    def finish(self):
+        self.hide()
+
+class HotkeySelector(QPushButton):
+    hotkeyChanged = pyqtSignal(str)
+
+    def __init__(self, current_hotkey="ctrl+alt+b", parent=None):
+        super().__init__(parent)
+        self.current_hotkey = current_hotkey
+        self.is_recording = False
+        self.setText(self.current_hotkey.upper())
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedHeight(35)
+        
+        self.shadow = QGraphicsDropShadowEffect(self)
+        self.shadow.setBlurRadius(10)
+        self.shadow.setColor(QColor(0, 255, 65, 100))
+        self.shadow.setOffset(0, 0)
+        self.setGraphicsEffect(self.shadow)
+
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: #0A0A0A;
+                border: 1px solid #1A1A1A;
+                border-radius: 8px;
+                color: #00FF41;
+                font-family: 'JetBrains Mono';
+                font-weight: bold;
+                font-size: 12px;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                border-color: #00FF41;
+                background-color: #0D0D0D;
+            }
+            QPushButton:checked {
+                border-color: #00FF41;
+                color: #FFFFFF;
+                background-color: #004D13;
+            }
+        """)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.start_recording()
+        super().mousePressEvent(event)
+
+    def start_recording(self):
+        self.is_recording = True
+        self.setText("PRESS KEYS...")
+        self.setChecked(True)
+        self.grabKeyboard()
+
+    def keyPressEvent(self, event):
+        if not self.is_recording:
+            super().keyPressEvent(event)
+            return
+
+        key = event.key()
+        if key == Qt.Key.Key_Escape:
+            self.stop_recording()
+            return
+
+        modifiers = event.modifiers()
+        parts = []
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            parts.append("ctrl")
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            parts.append("alt")
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            parts.append("shift")
+        
+        # Get key name
+        text = event.text().lower()
+        key_name = ""
+        
+        # Mapping for special keys
+        special_keys = {
+            Qt.Key.Key_Control: "",
+            Qt.Key.Key_Alt: "",
+            Qt.Key.Key_Shift: "",
+            Qt.Key.Key_Meta: "",
+            Qt.Key.Key_Space: "space",
+            Qt.Key.Key_Return: "enter",
+            Qt.Key.Key_Enter: "enter",
+            Qt.Key.Key_Escape: "esc",
+        }
+        
+        if key in special_keys:
+            key_name = special_keys[key]
+        elif key >= Qt.Key.Key_F1 and key <= Qt.Key.Key_F12:
+            key_name = f"f{key - Qt.Key.Key_F1 + 1}"
+        else:
+            key_name = text if text else ""
+
+        if key_name:
+            parts.append(key_name)
+            new_hotkey = "+".join(parts)
+            self.current_hotkey = new_hotkey
+            self.hotkeyChanged.emit(new_hotkey)
+            self.stop_recording()
+
+    def stop_recording(self):
+        self.is_recording = False
+        self.setText(self.current_hotkey.upper())
+        self.setChecked(False)
+        self.releaseKeyboard()

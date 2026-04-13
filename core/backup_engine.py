@@ -5,7 +5,7 @@ from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class BackupEngine(QThread):
-    progress = pyqtSignal(int, str)  # percentage, message
+    progress = pyqtSignal(int, str, int, int, float)  # percentage, message, current, total, size_mb
     finished = pyqtSignal(bool, str, dict) # success, message, stats
 
     def __init__(self, source, target, gitignore_handler, mode="overwrite"):
@@ -39,7 +39,7 @@ class BackupEngine(QThread):
             all_files = []
             total_size_bytes = 0
             
-            self.progress.emit(0, "Scanning directories...")
+            self.progress.emit(0, "Scanning directories...", 0, 0, 0.0)
             
             for root, dirs, files in os.walk(self.source):
                 if not self._is_running: return
@@ -106,10 +106,19 @@ class BackupEngine(QThread):
                     # Overwrite is default behavior (shutil.copy2)
 
                 if not skip:
-                    shutil.copy2(src_file, dest_file)
+                    try:
+                        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+                        shutil.copy2(src_file, dest_file)
+                        stats["files_copied"] = stats.get("files_copied", 0) + 1
+                        stats["total_size"] = stats.get("total_size", 0) + os.path.getsize(src_file)
+                    except (PermissionError, OSError):
+                        pass # Skip locked files
                 
                 percent = int(((i + 1) / total_files) * 100)
-                self.progress.emit(percent, f"Backing up: {rel_path}")
+                size_mb = stats["total_size"] / (1024 * 1024)
+                self.progress.emit(percent, f"Backing up: {rel_path}", i + 1, total_files, size_mb)
+                
+                if i % 100 == 0: time.sleep(0.01) # Yield to system
 
             end_time = time.time()
             duration = end_time - start_time

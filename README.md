@@ -5,10 +5,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Version-1.1.0--Stable-00FF41?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyQt6-v6.4+-41CD52?style=for-the-badge&logo=qt&logoColor=white" alt="PyQt6">
   <img src="https://img.shields.io/badge/Windows-Supported-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows">
-  <img src="https://img.shields.io/badge/Status-Production--Ready-success?style=for-the-badge" alt="Production Ready">
 </p>
 
 ---
@@ -21,37 +21,42 @@ Developed by **[R ! Y 4 Z](https://riyazz.dev)**, this tool isn't just a utility
 
 ---
 
-## 🚀 Elite Features
+## 🚀 Version 1.1.0 Highlights
 
-### 💎 Premium OLED Interface
+The **Sync Capsule Update** (v1.1.0) introduces a complete rewrite of the real-time feedback system, focusing on 100% stability, modern HUD aesthetics, and interactive responsiveness.
+
+- **💎 SyncPill Real-Time Capsule**: A sleek, always-on-top "Pill" dashboard located in the top-right corner. It provides live file counts, processed size (MB), and currently syncing file paths without any UI lag.
+- **🔔 Native OS Notifications**: Fully integrated with Windows System Tray alerts. Critical job status messages (Success/Failure) now appear as native OS notifications for maximum reliability.
+- **🔊 Audio Feedback System**: Integrated native Windows chimes (System Asterisk) that trigger upon successful backup completion for instant audio confirmation.
+- **🖱️ Enhanced Tray Interaction**: Upgraded system tray logic now supports **Double-Click to Restore**, allowing instant window recovery from the background.
+- **⚡ Performance First Architecture**: Removed legacy UI heartbeat timers to eliminate thread-contention. The sync engine now operates with optimized file-locking handlers.
+- **⌨️ Global Hotkey Support**: Instant backup triggering using `CTRL + ALT + B` (configurable).
+- **💾 Configuration Persistence**: All settings, filters, and custom hotkeys are now automatically saved and loaded on startup.
+
+---
+
+## 💎 Elite Features
+
+### 🌌 Premium OLED Interface
 - **Frameless Window Design**: Clean, modern edges with intuitive drag-and-drop movement.
-- **Glassmorphism & Glow**: Custom components featuring subtle glows and translucent frames.
-- **Rainbow Typography**: Dynamic headers that shift colors for a premium feel.
-- **System Tray Dominance**: Seamlessly minimizes to the tray with custom notifications.
+- **Glassmorphism & Glow**: Custom components featuring neon glows and translucent frames.
+- **Capsule HUD**: Real-time progress monitoring via a dedicated, synchronized top-right dashboard.
+- **System Tray Core**: Optimized for background operations with persistent tray presence and double-click restore.
 
 ### ⚙️ Professional Sync Engine
-- **Conflict Strategies**: 
-    - `Overwrite`: Force consistency across directories.
-    - `Skip`: Preserve existing targets if they exist.
-    - `Create`: Generate unique variants for conflicting files.
-    - `Smart Sync`: Intelligent merging based on file metadata.
-- **Pattern Filtering**: Comprehensive `.gitignore` support to exclude `node_modules`, `.git`, temporary logs, and build artifacts.
-- **Real-Time Analytics**: Monitor throughput (MB/s), file counts, and elapsed time with an animated progress tracking system.
-
-### 🛡️ Reliability & Integration
-- **Always-on-Top (Pin)**: Keep your sync status visible while you work.
-- **Boot Persistence**: Optional system startup integration to keep your backups automated from the moment you log in.
-- **Toast Notifications**: Smooth, non-intrusive feedback upon task completion.
+- **Pattern Filtering**: Industrial-grade `.gitignore` support via `pathspec` to exclude `node_modules`, `.git`, temporary logs, and build artifacts.
+- **Real-Time Analytics**: Monitor throughput (MB/s), file counts, and elapsed time with clinical accuracy.
+- **Auto-Yielding Loop**: Thread-safe file operations that prevent system hammering and keep your OS smooth while syncing thousands of files.
 
 ---
 
 ## 🛠 Installation & Usage
 
 ### 📦 For Users (Executable)
-1. Download the latest `BackUpSync.exe` from the [Releases](#) tab.
+1. Download the latest `BackUpSync_v1.1.0.exe` from the [Releases](#) tab.
 2. Launch and select your **Source** and **Target** directories.
 3. Configure your **Conflict Strategy** and **Filters**.
-4. Hit **BACKUP** and let the engine handle the rest.
+4. Hit **BACKUP** or use the global hotkey to sync instantly.
 
 ### 🧪 For Developers (Source)
 ```bash
@@ -62,7 +67,7 @@ git clone https://github.com/riyazalsodie/BackUpSync.git
 cd BackUpSync
 
 # Install dependencies
-pip install PyQt6
+pip install PyQt6 keyboard pathspec
 
 # Run the application
 python main.py
@@ -74,23 +79,18 @@ python main.py
 
 | Component | Technology |
 | :--- | :--- |
-| **Core Framework** | Python 3.x |
+| **Core Framework** | Python 3.11+ |
 | **GUI Framework** | PyQt6 (Qt v6.4+) |
-| **Styles** | Custom QSS (OLED Optimized) |
-| **Packaging** | PyInstaller |
-| **Logic** | Multi-threaded Backup Engine |
+| **Styling** | Custom QSS (Neon Glow Optimized) |
+| **Background Logic** | Async Multi-threaded Engine |
+| **Global Inputs** | Keyboard Hook Integration |
+| **Audio** | Native Winsound API |
 
 ---
 
 ## 🤝 Contribution
 
 Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 ---
 

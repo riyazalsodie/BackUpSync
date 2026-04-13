@@ -3,16 +3,21 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QFileDialog, QComboBox, QProgressBar, 
-    QTextEdit, QCheckBox, QFrame, QMessageBox, QSpacerItem, QSizePolicy
+    QTextEdit, QCheckBox, QFrame, QMessageBox, QSpacerItem, QSizePolicy, QSystemTrayIcon
 )
-from PyQt6.QtCore import Qt, pyqtSlot, QPoint
 from .styles import QSS_THEME
-from .components import GlowButton, GlowComboBox, AnimatedProgressBar, Toast, RainbowLabel, AnimatedCheckBox
+from .components import GlowButton, GlowComboBox, AnimatedProgressBar, Toast, RainbowLabel, AnimatedCheckBox, HotkeySelector, SyncPill
 from core.backup_engine import BackupEngine
 from core.gitignore_handler import GitignoreHandler
 from core.startup_manager import StartupManager
+from core.settings_manager import SettingsManager
+from PyQt6.QtCore import Qt, pyqtSlot, QPoint, pyqtSignal, QTimer
+import keyboard
+import winsound
 
 class MainWindow(QMainWindow):
+    hotkey_trigger = pyqtSignal()
+    
     def __init__(self):
         super().__init__()
         self.setWindowTitle("BackUp Sync")
@@ -32,9 +37,17 @@ class MainWindow(QMainWindow):
         self.is_pinned = False
         self.source_dir = ""
         self.target_dir = ""
+        self.current_hotkey = "ctrl+alt+b"
         self.backup_thread = None
+        self.toast = None
+        self.sync_pill = None
+        self.tray_icon = None # Will be set by main.py
+        
+        # Connect global hotkey trigger to start backup
+        self.hotkey_trigger.connect(self.start_backup)
         
         self.setup_ui()
+        self.setup_hotkeys()
         self.load_settings()
 
     def setup_ui(self):
@@ -150,6 +163,7 @@ class MainWindow(QMainWindow):
         mode_vbox.addWidget(QLabel("Conflict Strategy"))
         self.mode_combo = GlowComboBox()
         self.mode_combo.addItems(["Overwrite", "Skip", "Create", "Smart Sync"])
+        self.mode_combo.currentTextChanged.connect(self.save_settings)
         mode_vbox.addWidget(self.mode_combo)
         settings_row.addLayout(mode_vbox, 2)
 
@@ -165,6 +179,17 @@ class MainWindow(QMainWindow):
         settings_row.addLayout(startup_vbox, 1)
 
         config_layout.addLayout(settings_row)
+        
+        # Hotkey setting row
+        hotkey_row = QHBoxLayout()
+        hotkey_row.setSpacing(10)
+        hotkey_row.addWidget(QLabel("Global Hotkey:"))
+        self.hotkey_btn = HotkeySelector(self.current_hotkey)
+        self.hotkey_btn.hotkeyChanged.connect(self.update_hotkey)
+        hotkey_row.addWidget(self.hotkey_btn)
+        hotkey_row.addStretch()
+        config_layout.addLayout(hotkey_row)
+
         content_layout.addWidget(config_section)
 
         # 3. FILTERS SECTION
@@ -181,6 +206,7 @@ class MainWindow(QMainWindow):
         self.gitignore_text = QTextEdit()
         self.gitignore_text.setPlaceholderText("Enter .gitignore patterns here (e.g. node_modules/, *.log)")
         self.gitignore_text.setFixedHeight(90)
+        self.gitignore_text.textChanged.connect(self.save_settings)
         filter_layout.addWidget(self.gitignore_text)
         
         content_layout.addWidget(filter_section)
@@ -263,12 +289,14 @@ class MainWindow(QMainWindow):
             if gi_text:
                 self.gitignore_text.setPlainText(gi_text)
                 self.status_label.setText("Detected .gitignore in source.")
+            self.save_settings()
 
     def select_target(self):
         path = QFileDialog.getExistingDirectory(self, "Select Target Directory")
         if path:
             self.target_dir = path
             self.target_label.setText(path)
+            self.save_settings()
 
     @pyqtSlot()
     def toggle_startup(self):
@@ -288,6 +316,16 @@ class MainWindow(QMainWindow):
         self.backup_btn.setText("STOP BACKUP")
         self.progress_bar.show()
         
+        # Use Native Notification for Start
+        if hasattr(self, 'tray_icon') and self.tray_icon:
+            self.tray_icon.showMessage("Backup Started 🚀", "Syncing files in the background...", QSystemTrayIcon.MessageIcon.Information, 3000)
+        
+        # Show SyncPill for Realtime progress
+        if not self.sync_pill:
+            self.sync_pill = SyncPill()
+        self.sync_pill.update_progress(0, "Scanning...", 0, 0, 0.0)
+        self.sync_pill.show()
+        
         handler = GitignoreHandler()
         handler.add_patterns(self.gitignore_text.toPlainText())
         
@@ -301,11 +339,19 @@ class MainWindow(QMainWindow):
         self.backup_thread.finished.connect(self.on_backup_finished)
         self.backup_thread.start()
 
-    def update_progress(self, val, msg):
+    def update_progress(self, val, msg, current, total, size_mb):
+        # Update Main UI
         self.progress_bar.setValue(val)
-        self.status_label.setText(msg)
+        self.status_label.setText(f"[{current}/{total}] {msg}")
+        
+        # Update SyncPill Realtime
+        if self.sync_pill:
+            self.sync_pill.update_progress(val, msg, current, total, size_mb)
 
     def on_backup_finished(self, success, msg, stats):
+        if self.sync_pill:
+            self.sync_pill.finish()
+            
         self.backup_btn.setText("START BACKUP")
         self.progress_bar.hide()
         self.status_label.setText(msg)
@@ -321,13 +367,71 @@ class MainWindow(QMainWindow):
                 f"Time: {duration:.1f}s | Speed: {speed:.2f} MB/s"
             )
             
+            # Play Success Sound (Windows System Sound)
+            try:
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            except:
+                pass
+            
+            if hasattr(self, 'tray_icon') and self.tray_icon:
+                self.tray_icon.showMessage("Backup Successful! ✅", detail_msg, QSystemTrayIcon.MessageIcon.Information, 5000)
+            
+            # Optionally still show success toast if preferred, but tray is 100% reliable
             self.toast = Toast("Backup Successful! ✅", detail_msg)
             self.toast.show_toast()
         else:
+            if self.tray_icon:
+                self.tray_icon.showMessage("Backup Failed! ❌", msg, QSystemTrayIcon.MessageIcon.Critical, 5000)
             QMessageBox.critical(self, "Error", msg)
 
+    def update_hotkey(self, new_hotkey):
+        self.current_hotkey = new_hotkey
+        self.setup_hotkeys()
+        self.save_settings()
+        self.status_label.setText(f"Hotkey updated to: {new_hotkey.upper()}")
+
+    def setup_hotkeys(self):
+        try:
+            # Unregister all previously registered hotkeys to avoid conflicts
+            keyboard.unhook_all()
+            # Register the new hotkey
+            keyboard.add_hotkey(self.current_hotkey, lambda: self.hotkey_trigger.emit())
+        except Exception as e:
+            print(f"Failed to register global hotkey: {e}")
+
+    def save_settings(self, *args):
+        data = {
+            "source_dir": self.source_dir,
+            "target_dir": self.target_dir,
+            "conflict_strategy": self.mode_combo.currentText(),
+            "gitignore_text": self.gitignore_text.toPlainText(),
+            "hotkey": self.current_hotkey
+        }
+        SettingsManager.save_settings(data)
+
     def load_settings(self):
-        pass
+        data = SettingsManager.load_settings()
+        if data:
+            self.source_dir = data.get("source_dir", "")
+            self.target_dir = data.get("target_dir", "")
+            self.current_hotkey = data.get("hotkey", "ctrl+alt+b")
+            
+            self.source_label.setText(self.source_dir if self.source_dir else "Not selected")
+            self.target_label.setText(self.target_dir if self.target_dir else "Not selected")
+            
+            self.hotkey_btn.current_hotkey = self.current_hotkey
+            self.hotkey_btn.setText(self.current_hotkey.upper())
+            
+            strategy = data.get("conflict_strategy", "Overwrite")
+            index = self.mode_combo.findText(strategy)
+            if index >= 0:
+                self.mode_combo.setCurrentIndex(index)
+            
+            gi_text = data.get("gitignore_text", "")
+            self.gitignore_text.setPlainText(gi_text)
+            
+            # Repopulate hotkey in keyboard handler
+            self.setup_hotkeys()
 
     def closeEvent(self, event):
         # This will be overridden by main.py to handle minimize to tray

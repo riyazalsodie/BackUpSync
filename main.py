@@ -14,7 +14,8 @@ def main():
     window = MainWindow()
 
     # System Tray Setup
-    tray_icon = QSystemTrayIcon(window)
+    tray_icon = QSystemTrayIcon(parent=window)
+    window.tray_icon = tray_icon
     
     # Use a standard icon if local icon not found
     icon_path = os.path.join(os.path.dirname(__file__), "resources", "icon.png")
@@ -39,6 +40,15 @@ def main():
     
     tray_icon.setContextMenu(tray_menu)
     tray_icon.setToolTip("BackUp Sync")
+    
+    # Handle Double Click to Restore
+    def on_tray_activated(reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            window.showNormal()
+            window.activateWindow()
+            window.raise_()
+
+    tray_icon.activated.connect(on_tray_activated)
     tray_icon.show()
 
     # Handle window close to minimize to tray
